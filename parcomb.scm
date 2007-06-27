@@ -7,49 +7,139 @@
 ;;; Domain.  All warranties are disclaimed.
 
 (define-record-type <parse-state>
-    (make-parse-state stream position advancer)
+    (make-parse-state stream position advancer stack)
     parse-state?
   (stream parse-state/stream)
   (position parse-state/position)
-  (advancer parse-state/advancer))
+  (advancer parse-state/advancer)
+  (stack parse-state/stack))
 
-(define (parse parser stream initial-position advancer lose)
-  (run 'PARSE parser (make-parse-state stream initial-position advancer)
-       (lambda (consumed? pstate value perror)
-         consumed? pstate perror        ;ignore
-         value)
-       (lambda (consumed? pstate perror)
-         consumed? pstate               ;ignore
-         (lose perror))))
+(define (parse parser stream position advancer win lose)
+  (run 'PARSE parser (initial-parse-state stream position advancer lose)
+       (lambda (pstate value perror)
+         perror                         ;ignore
+         (win value (parse-state/stream pstate)))))
 
-(define (run marker parser pstate win lose)
+(define (initial-parse-state stream position advancer lose)
+  (make-parse-state stream position advancer
+                    (lambda (pstate perror)
+                      (lose perror (parse-state/stream pstate)))))
+
+(define (parse-state-with-stack pstate stack)
+  (make-parse-state (parse-state/stream pstate)
+                    (parse-state/position pstate)
+                    (parse-state/advancer pstate)
+                    stack))
+
+(define (parse-state/end? pstate)
+  (stream-null? (parse-state/stream pstate)))
+
+(define (parse-state/next-token pstate)
+  (stream-car (parse-state/stream pstate)))
+
+(define (parse-state/advance pstate)
+  (let ((stream (parse-state/stream pstate))
+        (position (parse-state/position pstate))
+        (advancer (parse-state/advancer pstate))
+        (stack (parse-state/stack pstate)))
+    (make-parse-state (stream-cdr stream)
+                      (advancer position (stream-car stream))
+                      advancer
+                      (flush-parse-stack stack))))
+
+;;;; Parse Stack Management
+
+;;; The parse stack is a list terminated by a final losing continuation
+;;; or a parse state to which to backtrack.  The elements of the stack
+;;; are losing continuations.
+;;;
+;;; This page was substantially more complex until I decided to use a
+;;; flat continuation-per-frame representation of the stack, rather
+;;; than a list of lists of continuations representing choices.  I
+;;; originally tried the more complex format in the hope that it would
+;;; benefit PARSER:CHOICE to to as little preprocessing as possible,
+;;; but then I realized (1) it has to do preprocessing anyway, and (2)
+;;; this thing is not going to be fast unless it runs in a fast Scheme
+;;; that properly integrates procedures.
+
+(define (parse-state/push pstate continuation)
+  (parse-state-with-stack pstate
+                          (cons continuation (parse-state/stack pstate))))
+
+(define (parse-state/pop pstate)
+  (let ((stack (parse-state/stack pstate)))
+    (cond ((pair? stack)                ;+++ Common case first.
+           (parse-state/*pop pstate stack))
+          ((parse-state? stack)         ;Preserved parse state.
+           (parse-state/*pop stack (parse-state/stack stack)))
+          (else                         ;Final continuation.
+           (values stack pstate)))))
+
+(define (parse-state/*pop pstate stack)
+  (values (car stack)
+          (parse-state-with-stack pstate (cdr stack))))
+
+(define (parse-state/preserve pstate)
+  (if (pair? (parse-state/stack pstate))
+      (parse-state-with-stack pstate pstate)
+      pstate))
+
+(define (parse-state/flush pstate)
+  (parse-state-with-stack pstate (flush-parse-stack pstate)))
+
+(define (flush-parse-stack stack)
+  (let loop ((stack stack))
+    (if (pair? stack)
+        (loop (cdr stack))
+        stack)))
+
+;;;; Parser Drivers
+
+;;; This little abstraction for driving the parser exists for the
+;;; purpose of carefully controlling tracing behaviour.  If the
+;;; conditionals on *PARSE-TRACE?* are eliminated, all of these
+;;; procedures will integrate nicely to straight tail calls with no
+;;; indirection through a top-level reference.  (Scheme48 is too stupid
+;;; to eliminate the conditionals even when it can *prove* that
+;;; *PARSE-TRACE?* will be false, if ENABLE-PARSE-TRACE and
+;;; DISABLE-PARSE-TRACe are commented out so that there is no
+;;; assignment to it.  Blah.)
+;;;
+;;; The tracing is not especially well-engineered at the moment; it is
+;;; mostly useful for me to scan to get an idea of whether the parser
+;;; is being remotely sane.  However, the way I have written the code
+;;; below makes it easy for a better-engineered mechanism than what is
+;;; on this page to be substituted trivially.
+
+(define (run marker parser pstate win)
   (if *parse-trace?*
       (begin
         (write `(RUN ,marker))
         (newline)))
-  (parser pstate win lose))
+  (parser pstate win))
 
-(define (success* marker win consumed? pstate value)
-  (success marker win consumed? pstate value
+(define (success* marker win pstate value)
+  (success marker win pstate value
            (make-parse-error:unknown (parse-state/position pstate))))
 
-(define (success marker win consumed? pstate value perror)
+(define (success marker win pstate value perror)
   (if *parse-trace?*
       (begin
         (write `(SUCCESS ,marker -> ,value
                          ,(parse-error/position perror)
                          ,@(parse-error/messages perror)))
         (newline)))
-  (win consumed? pstate value perror))
+  (win pstate value perror))
 
-(define (failure marker lose consumed? pstate perror)
+(define (failure marker pstate perror)
   (if *parse-trace?*
       (begin
         (write `(FAILURE ,marker
                          ,(parse-error/position perror)
                          ,@(parse-error/messages perror)))
         (newline)))
-  (lose consumed? pstate perror))
+  (receive (lose pstate) (parse-state/pop pstate)
+    (lose pstate perror)))
 
 (define *parse-trace?* #f)
 
@@ -63,111 +153,115 @@
                     thunk
                     disable-parse-trace)))
 
+;;;; Primitive Parser Combinators
+
 (define (parser:epsilon thunk)
-  (lambda (pstate win lose)
-    lose                                ;ignore
-    (success* 'PARSER:EPSILON win #f pstate (thunk))))
+  (lambda (pstate win)
+    (success* 'PARSER:EPSILON win pstate (thunk))))
 
 (define (parser:error . messages)
-  (lambda (pstate win lose)
+  (lambda (pstate win)
     win                                 ;ignore
-    (failure 'PARSER:ERROR lose #f pstate
+    (failure 'PARSER:ERROR
+             pstate
              (make-parse-error (parse-state/position pstate)
                                messages))))
 
 (define (parser:on-failure lose parser)
-  (lambda (pstate win *lose)
-    (run 'PARSER:ON-FAILURE parser pstate win
-         (lambda (consumed? pstate perror)
-           (lose consumed? pstate perror *lose)))))
+  (lambda (pstate win)
+    (run 'PARSER:ON-FAILURE parser (parse-state/push pstate lose) win)))
 
 (define (parser:extend parser extender)
-  (lambda (pstate win lose)
+  (lambda (pstate win)
     (run 'PARSER:EXTEND parser pstate
-         (lambda (consumed? pstate value perror)
-           (run '(PARSER:EXTEND EXTENSION) (extender value) pstate
-                (lambda (consumed?* pstate* value* perror*)
-                  (success '(PARSER:EXTEND EXTENSION) win
-                           (or consumed? consumed?*)
-                           pstate*
-                           value*
-                           (if consumed?*
-                               perror*
-                               (merge-parse-errors perror perror*))))
-                (lambda (consumed?* pstate* perror*)
-                  (failure '(PARSER:EXTEND EXTENSION) lose
-                           (or consumed? consumed?*)
-                           pstate*
-                           perror*))))
-         lose)))
+         (lambda (pstate value perror)
+           (run '(PARSER:EXTEND EXTENSION) (extender value)
+                (parse-state/push pstate
+                  (lambda (pstate* perror*)
+                    (failure '(PARSER:EXTEND EXTENSION)
+                             pstate*
+                             (merge-parse-errors perror perror*))))
+                win)))))
 
 (define (parser:binary-choice left-parser right-parser)
-  (lambda (pstate win lose)
-    (run '(PARSER:BINARY-CHOICE LEFT) left-parser pstate
-         win
-         (lambda (consumed? pstate perror)
-           (if consumed?
-               (failure '(PARSER:BINARY-CHOICE CONSUMED) lose #t pstate perror)
-               (let ((merge (lambda (consumed?* perror*)
-                              (if consumed?*
-                                  perror*
-                                  (merge-parse-errors perror perror*)))))
-                 (run '(PARSER:BINARY-CHOICE RIGHT) right-parser pstate
-                      (lambda (consumed?* pstate* value* perror*)
-                        (success '(PARSER:BINARY-CHOICE RIGHT)
-                                 win consumed?* pstate* value*
-                                 (merge consumed?* perror*)))
-                      (lambda (consumed?* pstate* perror*)
-                        (failure '(PARSER:BINARY-CHOICE RIGHT)
-                                 lose consumed?* pstate*
-                                 (merge consumed?* perror*))))))))))
-
+  (lambda (pstate win)
+    (run '(PARSER:BINARY-CHOICE LEFT) left-parser
+         (parse-state/push pstate
+           (lambda (pstate perror)
+             (run '(PARSER:BINARY-CHOICE RIGHT) right-parser
+                  (parse-state/push pstate
+                    (lambda (pstate* perror*)
+                      (failure 'PARSER:CHOICE
+                               pstate
+                               (merge-parse-errors perror perror*))))
+                  win)))
+         win)))
+
 (define (parser:backtrackable parser)
-  (lambda (pstate win lose)
-    (run 'PARSER:BACKTRACKABLE parser pstate
-         win
-         (lambda (consumed? pstate* perror)
-           (failure 'PARSER:BACKTRACKABLE lose #f pstate
-                    (if consumed?
-                        (parse-error-with-position
-                         perror
-                         (parse-state/position pstate))
-                        perror))))))
+  (lambda (pstate win)
+    (run 'PARSER:BACKTRACKABLE parser
+         (parse-state/preserve
+          (parse-state/push pstate
+            (lambda (pstate perror)
+              (failure 'PARSER:BACKTRACKABLE
+                       pstate
+                       (parse-error-with-position
+                        perror
+                        (parse-state/position pstate))))))
+         (lambda (pstate* value perror)
+           (success 'PARSER:BACKTRACKABLE
+                    win
+                    (parse-state-with-stack pstate* (parse-state/stack pstate))
+                    value
+                    perror)))))
+
+;;;;; Odds and Ends
+
+;;; This totally loses because most Scheme systems won't integrate
+;;; PARSER:TOKEN*.  Phooey.
 
 (define (parser:token* processor)
-  (lambda (pstate win lose)
-    (let ((stream (parse-state/stream pstate))
-          (position (parse-state/position pstate))
-          (advancer (parse-state/advancer pstate)))
-      (if (stream-pair? stream)
-          (let ((token (stream-car stream)))
-            (processor
-             token
-             (lambda (value)
-               (success* 'PARSER:TOKEN* win #t
-                         (make-parse-state (stream-cdr stream)
-                                           (advancer position token)
-                                           advancer)
-                         value))
-             (lambda ()
-               (failure 'PARSER:TOKEN* lose #f pstate
-                        (make-parse-error:unexpected-token token position)))))
-          (failure 'PARSER:TOKEN* lose #f pstate
-                   (make-parse-error:unexpected-end-of-input position))))))
+  (lambda (pstate win)
+    (if (parse-state/end? pstate)
+        (failure 'PARSER:TOKEN*
+                 pstate
+                 (make-parse-error:unexpected-end-of-input
+                  (parse-state/position pstate)))
+        (let ((token (parse-state/next-token pstate)))
+          (processor token
+                     (lambda (value)
+                       (success* 'PARSER:TOKEN*
+                                 win
+                                 (parse-state/advance pstate)
+                                 value))
+                     (lambda ()
+                       (failure 'PARSER:TOKEN*
+                                pstate
+                                (make-parse-error:unexpected-token
+                                 token
+                                 (parse-state/position pstate)))))))))
 
 (define (parser:peek parser)
-  (lambda (pstate win lose)
-    (run 'PARSER:PEEK parser pstate
-         (lambda (consumed? pstate* value perror)
-           (success 'PARSER:PEEK win #f pstate value perror))
-         (lambda (consumed? pstate* perror)
-           (failure 'PARSER:PEEK lose #f pstate perror)))))
+  (lambda (pstate win)
+    (run 'PARSER:PEEK parser
+         (parse-state/push pstate
+           (lambda (pstate* perror*)
+             pstate*                    ;ignore
+             (failure 'PARSER:PEEK
+                      pstate
+                      (parse-error-with-position
+                       perror*
+                       (parse-state/position pstate)))))
+         (lambda (pstate* value perror)
+           pstate*                      ;ignore
+           (success 'PARSER:PEEK win pstate value perror)))))
 
 (define (parser:end)
-  (lambda (pstate win lose)
-    (if (stream-null? (parse-state/stream pstate))
-        (success* 'PARSER:END win #f pstate '())
-        (failure 'PARSER:END lose #f pstate
+  (lambda (pstate win)
+    (if (parse-state/end? pstate)
+        (success* 'PARSER:END win pstate '())
+        (failure 'PARSER:END
+                 pstate
                  (make-parse-error:trailing-garbage
                   (parse-state/position pstate))))))
 
@@ -177,16 +271,15 @@
     (parser:return value)))
 
 (define (parser:delayed promise)
-  (lambda (pstate win lose)
-    (run 'PARSER:DELAYED (force promise) pstate win lose)))
+  (lambda (pstate win)
+    (run 'PARSER:DELAYED (force promise) pstate win)))
+
+;;; This will label only the entrance to the parse state.  To label
+;;; exit as well, use PARSER:ON-FAILURE or PARSER:EXTEND.
 
 (define (parser:label name parser)
-  (lambda (pstate win lose)
-    (run name parser pstate
-         (lambda (consumed? pstate value perror)
-           (success name win consumed? pstate value perror))
-         (lambda (consumed? pstate perror)
-           (failure name lose consumed? pstate perror)))))
+  (lambda (pstate win)
+    (run name parser pstate win)))
 
 ;;;; Syntactic Sugar
 
@@ -214,7 +307,15 @@
 ;;;                    ...)),
 ;;;
 ;;; which would (and did, for me!) lead to a very confusing infinite
-;;; loop that would blow the stack.
+;;; loop that would blow the stack.  Unfortunately, this leads to a
+;;; dreadful inefficiency which I am powerless to avoid.  (I'm not sure
+;;; precisely what impact this has on performance, though.)
+;;;
+;;; I am not sure whether the code on the following pages ought to use
+;;; DEFINE-PARSER.  (Primarily, it would clutter up traces, but that is
+;;; sometimes what I want.  Ah, how nice it would be to have a high-
+;;; level mechanism for describing precisely and accurately the traces
+;;; that I want to see at exactly the levels I want to see.)
 
 (define-syntax *parser
   (syntax-rules ()
@@ -237,7 +338,7 @@
                              (**PARSER (more ...) tail-parser))))))
 
 (define-syntax define-parser
-  (syntax-rules ()
+  (syntax-rules (*PARSER)
     ((DEFINE-PARSER (name . bvl) parser)
      (DEFINE (name . bvl)
        (PARSER:LABEL 'name parser)))
@@ -377,6 +478,9 @@
 
 ;;;;; Brackets
 
+;;; Did I mean to populate this page with anything else?  It's awfully
+;;; bare.
+
 (define (parser:bracketed left-bracket right-bracket body-parser)
   (*parser ((left-bracket)
             (body body-parser)
@@ -390,25 +494,30 @@
 ;;;; Matching Parsers
 
 ;;; This is a bit kludgey, because the matcher combinators are
-;;; primitive: they don't track source position for us.
+;;; primitive: they don't track source position for us.  Also, this
+;;; procedure is three lines too long.
 
 (define (parser:match matcher processor)
-  (lambda (pstate win lose)
+  (lambda (pstate win)
     (let ((stream (parse-state/stream pstate))
           (position (parse-state/position pstate))
-          (advancer (parse-state/advancer pstate)))
+          (advancer (parse-state/advancer pstate))
+          (stack (parse-state/stack pstate)))
       (cond ((match matcher (parse-state/stream pstate))
              => (lambda (stream*)
                   (success* 'PARSER:MATCH
                             win
-                            (not (eq? stream* stream))
                             (make-parse-state
                              stream*
                              (advance-tokens stream stream* position advancer)
-                             advancer)
+                             advancer
+                             (if (not (eq? stream stream*))
+                                 (flush-parse-stack stack)
+                                 stack))
                             (processor stream stream*))))
             (else
-             (failure 'PARSER:MATCH lose #f pstate
+             (failure 'PARSER:MATCH
+                      pstate
                       (make-parse-error (parse-state/position pstate)
                                         '("Match failed"))))))))
 

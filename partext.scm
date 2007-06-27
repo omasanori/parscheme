@@ -22,6 +22,9 @@
                  (if (char=? char #\newline)
                      (cons (+ line 1) 1)
                      (cons line (+ column 1)))))
+             (lambda (value stream)
+               stream                   ;ignore
+               value)
              lose))))
 
 (define (parse-string parser string lose)
@@ -29,6 +32,9 @@
          (string->stream string)
          0
          (lambda (position token) token (+ position 1))
+         (lambda (value stream)
+           stream                       ;ignore
+           value)
          lose))
 
 (define (parser:char)

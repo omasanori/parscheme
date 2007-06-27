@@ -27,6 +27,7 @@
   (open scheme
         srfi-1                          ;list-lib
         srfi-9                          ;define-record-type
+        receiving
         lazy-streams
         parse-errors
         matcher-combinators
