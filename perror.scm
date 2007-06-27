@@ -24,11 +24,7 @@
   (make-parse-error position '()))
 
 (define (make-parse-error:unexpected-token token position)
-  (make-parse-error
-   position
-   (list (string-append "Unexpected token: `"
-                        (limited-write-to-string token)
-                        "'"))))
+  (make-parse-error position (list `("Unexpected token:" ,token))))
 
 (define (make-parse-error:unexpected-end-of-input position)
   (make-parse-error position '("Unexpected end of input")))

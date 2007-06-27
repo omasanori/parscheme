@@ -50,15 +50,6 @@
         )
   (optimize auto-integrate)
 
-  (open (subset extended-ports (call-with-string-output-port))
-        (subset display-conditions (limited-write)))
-  (begin
-    (define (limited-write-to-string object)
-      (call-with-string-output-port
-        (lambda (output-port)
-          (limited-write object output-port 5 3))))
-    )
-
   (files perror)
 
   (open (subset define-record-types (define-record-discloser)))
