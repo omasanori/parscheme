@@ -14,7 +14,7 @@
   (advancer parse-state/advancer)
   (stack parse-state/stack))
 
-(define (parse parser stream position advancer win lose)
+(define (parse-stream parser stream position advancer win lose)
   (run 'PARSE parser (initial-parse-state stream position advancer lose)
        (lambda (pstate value perror)
          perror                         ;ignore

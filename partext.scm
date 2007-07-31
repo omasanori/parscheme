@@ -9,33 +9,33 @@
 (define (parse-file parser pathname lose)
   (call-with-input-file pathname
     (lambda (input-port)
-      (parse parser
-             (let recur ()
-               (lazy (let ((char (read-char input-port)))
-                       (if (eof-object? char)
-                           stream-nil
-                           (stream-cons char (recur))))))
-             (cons 1 1)
-             (lambda (position char)
-               (let ((line (car position))
-                     (column (cdr position)))
-                 (if (char=? char #\newline)
-                     (cons (+ line 1) 1)
-                     (cons line (+ column 1)))))
-             (lambda (value stream)
-               stream                   ;ignore
-               value)
-             lose))))
+      (parse-stream parser
+                    (let recur ()
+                      (lazy (let ((char (read-char input-port)))
+                              (if (eof-object? char)
+                                  stream-nil
+                                  (stream-cons char (recur))))))
+                    (cons 1 1)
+                    (lambda (position char)
+                      (let ((line (car position))
+                            (column (cdr position)))
+                        (if (char=? char #\newline)
+                            (cons (+ line 1) 1)
+                            (cons line (+ column 1)))))
+                    (lambda (value stream)
+                      stream            ;ignore
+                      value)
+                    lose))))
 
 (define (parse-string parser string lose)
-  (parse parser
-         (string->stream string)
-         0
-         (lambda (position token) token (+ position 1))
-         (lambda (value stream)
-           stream                       ;ignore
-           value)
-         lose))
+  (parse-stream parser
+                (string->stream string)
+                0
+                (lambda (position token) token (+ position 1))
+                (lambda (value stream)
+                  stream                ;ignore
+                  value)
+                lose))
 
 (define (parser:char)
   (parser:token-if char?))

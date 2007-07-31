@@ -8,7 +8,7 @@
 
 (define-interface parser-combinators-interface
   (export
-    parse
+    parse-stream
     (define-parser :syntax)
     (*parser :syntax)
     parser:at-least
