@@ -162,6 +162,12 @@
     make-parse-error:unexpected-token
     ))
 
+(define-interface parsing-tests-interface
+  (export
+    parsing-tests
+    test-parsing
+    ))
+
 (define-interface lazy-streams-interface
   (export
     (stream-cons :syntax)

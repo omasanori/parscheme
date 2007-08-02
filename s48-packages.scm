@@ -37,6 +37,7 @@
 
 (define-structure text-parser-combinators text-parser-combinators-interface
   (open scheme
+        srfi-6                          ;Basic String Ports
         srfi-14                         ;Character-Set Library
         laziness
         lazy-streams
@@ -60,6 +61,17 @@
         `(PARSE-ERROR (AT ,(parse-error/position perror))
                       ,@(parse-error/messages perror))))
     ))
+
+(define-structure parsing-tests parsing-tests-interface
+  (open scheme
+        simple-signals
+        simple-testing
+        parser-combinators
+        text-parser-combinators
+        parse-errors
+        lazy-streams
+        )
+  (files test))
 
 (define-structure lazy-streams lazy-streams-interface
   (open (modify scheme (hide delay force))
