@@ -72,6 +72,7 @@
 (define-interface matcher-combinators-interface
   (export
     match
+    (define-matcher :syntax)
 
     ;; Matcher combinators
     matcher:at-least

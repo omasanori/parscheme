@@ -27,6 +27,16 @@
         (write `(RUN ,marker))
         (newline)))
   (matcher stream))
+
+(define-syntax define-matcher
+  (syntax-rules ()
+    ((DEFINE-MATCHER (name . bvl) matcher)
+     (DEFINE (name . bvl) matcher))
+    ((DEFINE-MATCHER name matcher)
+     (DEFINE name
+       (LET ((PROMISE (DELAY matcher)))
+         (LAMBDA (STREAM)
+           (RUN 'name (FORCE PROMISE) STREAM)))))))
 
 (define (matcher:epsilon)
   (lambda (stream)
