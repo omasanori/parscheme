@@ -565,25 +565,26 @@
           (stack (parse-state/stack pstate)))
       (cond ((match matcher (parse-state/stream pstate))
              => (lambda (stream*)
-                  (success* 'PARSER:MATCH
-                            win
-                            (make-parse-state
-                             stream*
-                             (advance-tokens stream stream* position advancer)
-                             advancer
-                             (if (not (eq? stream stream*))
-                                 (flush-parse-stack stack)
-                                 stack))
-                            (processor stream stream*))))
+                  (let ((substream (stream-difference stream stream*)))
+                    (success* 'PARSER:MATCH
+                              win
+                              (make-parse-state
+                               stream*
+                               (advance-tokens substream position advancer)
+                               advancer
+                               (if (not (eq? stream stream*))
+                                   (flush-parse-stack stack)
+                                   stack))
+                              (processor substream)))))
             (else
              (failure 'PARSER:MATCH
                       pstate
                       (make-parse-error (parse-state/position pstate)
                                         '("Match failed"))))))))
 
-(define (advance-tokens from-stream to-stream position advancer)
-  (let loop ((stream from-stream) (position position))
-    (if (eq? stream to-stream)
+(define (advance-tokens stream position advancer)
+  (let loop ((stream stream) (position position))
+    (if (stream-null? stream)
         position
         (loop (stream-cdr stream)
               (advancer position
@@ -591,15 +592,9 @@
 
 (define (parser:match->ignore matcher)
   (parser:match matcher
-                (lambda (from-stream to-stream)
-                  from-stream to-stream ;ignore
+                (lambda (stream)
+                  stream                ;ignore
                   '())))
 
 (define (parser:match->list matcher)
-  (parser:match matcher
-                (lambda (from-stream to-stream)
-                  (let recur ((stream from-stream))
-                    (if (eq? stream to-stream)
-                        '()
-                        (cons (stream-car stream)
-                              (recur (stream-cdr stream))))))))
+  (parser:match matcher stream->list))
