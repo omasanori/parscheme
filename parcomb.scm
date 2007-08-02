@@ -5,31 +5,49 @@
 
 ;;; This code is written by Taylor R. Campbell and placed in the Public
 ;;; Domain.  All warranties are disclaimed.
-
+
 (define-record-type <parse-state>
-    (make-parse-state stream position advancer stack)
+    (make-parse-state stream position advancer stack context)
     parse-state?
   (stream parse-state/stream)
   (position parse-state/position)
   (advancer parse-state/advancer)
-  (stack parse-state/stack))
+  (stack parse-state/stack)
+  (context parse-state/context))
 
-(define (parse-stream parser stream position advancer win lose)
-  (run 'PARSE parser (initial-parse-state stream position advancer lose)
+(define (parse-stream parser stream position advancer context win lose)
+  (run 'PARSE parser
+       (initial-parse-state stream position advancer context lose)
        (lambda (pstate value perror)
          perror                         ;ignore
-         (win value (parse-state/stream pstate)))))
+         (win value
+              (parse-state/context pstate)
+              (parse-state/stream pstate)))))
 
-(define (initial-parse-state stream position advancer lose)
-  (make-parse-state stream position advancer
-                    (lambda (pstate perror)
-                      (lose perror (parse-state/stream pstate)))))
+(define (initial-parse-state stream position advancer context lose)
+  (make-parse-state stream position advancer (luser lose) context))
+
+;;; Convert a user's loser (a luser) into a loser.  This is silly.
+
+(define (luser lose)
+  (lambda (pstate perror)
+    (lose perror
+          (parse-state/context pstate)
+          (parse-state/stream pstate))))
+
+(define (parse-state-with-context pstate context)
+  (make-parse-state (parse-state/stream pstate)
+                    (parse-state/position pstate)
+                    (parse-state/advancer pstate)
+                    (parse-state/stack pstate)
+                    context))
 
 (define (parse-state-with-stack pstate stack)
   (make-parse-state (parse-state/stream pstate)
                     (parse-state/position pstate)
                     (parse-state/advancer pstate)
-                    stack))
+                    stack
+                    (parse-state/context pstate)))
 
 (define (parse-state/end? pstate)
   (stream-null? (parse-state/stream pstate)))
@@ -38,14 +56,16 @@
   (stream-car (parse-state/stream pstate)))
 
 (define (parse-state/advance pstate)
-  (let ((stream (parse-state/stream pstate))
+  (let ((context (parse-state/context pstate))
+        (stream (parse-state/stream pstate))
         (position (parse-state/position pstate))
         (advancer (parse-state/advancer pstate))
         (stack (parse-state/stack pstate)))
     (make-parse-state (stream-cdr stream)
                       (advancer position (stream-car stream))
                       advancer
-                      (flush-parse-stack stack))))
+                      (flush-parse-stack stack)
+                      context)))
 
 ;;;; Parse Stack Management
 
@@ -169,7 +189,9 @@
 
 (define (parser:on-failure lose parser)
   (lambda (pstate win)
-    (run 'PARSER:ON-FAILURE parser (parse-state/push pstate lose) win)))
+    (run 'PARSER:ON-FAILURE parser
+         (parse-state/push pstate (luser lose))
+         win)))
 
 (define (parser:extend parser extender)
   (lambda (pstate win)
@@ -214,6 +236,36 @@
                     (parse-state-with-stack pstate* (parse-state/stack pstate))
                     value
                     perror)))))
+
+;;;;; Context
+
+;;; This can store the the context in context-sensitive parsers.
+
+(define (parser:context)
+  (lambda (pstate win)
+    (success* 'PARSER:CONTEXT win pstate (parse-state/context pstate))))
+
+(define (parser:set-context context)
+  (lambda (pstate win)
+    (success* 'PARSER:SET-CONTEXT
+              win
+              (parse-state-with-context pstate context)
+              context)))
+
+(define (parser:with-context receiver)
+  (lambda (pstate win)
+    (success* 'PARSER:WITH-CONTEXT
+              win
+              pstate
+              (receiver (parse-state/context pstate)))))
+
+(define (parser:modify-context modifier)
+  (lambda (pstate win)
+    (let ((context* (modifier (parse-state/context pstate))))
+      (success* 'PARSER:MODIFY-CONTEXT
+                win
+                (parse-state-with-context pstate context*)
+                context*))))
 
 ;;;;; Odds and Ends
 
@@ -562,7 +614,8 @@
     (let ((stream (parse-state/stream pstate))
           (position (parse-state/position pstate))
           (advancer (parse-state/advancer pstate))
-          (stack (parse-state/stack pstate)))
+          (stack (parse-state/stack pstate))
+          (context (parse-state/context pstate)))
       (cond ((match matcher (parse-state/stream pstate))
              => (lambda (stream*)
                   (let ((substream (stream-difference stream stream*)))
@@ -574,7 +627,8 @@
                                advancer
                                (if (not (eq? stream stream*))
                                    (flush-parse-stack stack)
-                                   stack))
+                                   stack)
+                               context)
                               (processor substream)))))
             (else
              (failure 'PARSER:MATCH

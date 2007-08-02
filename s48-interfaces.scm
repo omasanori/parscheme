@@ -24,6 +24,7 @@
     parser:bracketed-list
     parser:choice
     parser:complete
+    parser:context
     parser:deep-choice
     parser:delayed
     parser:end
@@ -46,6 +47,7 @@
     parser:match
     parser:match->list
     parser:match->ignore
+    parser:modify-context
     parser:noise:at-least
     parser:noise:at-least-until
     parser:noise:at-most
@@ -64,9 +66,11 @@
     parser:repeated-until
     parser:return
     parser:sequence
+    parser:set-context
     parser:token
     parser:token*
     parser:token-if
+    parser:with-context
     ))
 
 (define-interface matcher-combinators-interface
