@@ -19,8 +19,9 @@
                 (lambda (position token)
                   token                 ;ignore
                   (+ position 1))
-                (lambda (result stream)
-                  stream                ;ignore
+                #f                      ;no context
+                (lambda (result context stream)
+                  context stream        ;ignore
                   result)
                 (if (pair? loser) (car loser) parser-lossage)))
 
@@ -30,14 +31,22 @@
 (define (pt parser string . loser)      ;Parse Text
   (parse-string parser
                 string
+                #f                      ;no context
+                (lambda (result context stream)
+                  context stream        ;ignore
+                  result)
                 (if (pair? loser) (car loser) parser-lossage)))
 
 (define (pf parser pathname . loser)    ;Parse File
   (parse-file parser
               pathname
+              #f                        ;no context
+              (lambda (result context stream)
+                context stream          ;ignore
+                result)
               (if (pair? loser) (car loser) parser-lossage)))
 
-(define (parser-lossage perror stream)
+(define (parser-lossage perror stream context)
   stream                                ;ignore
   (error "Parse error:"
          (parse-error/position perror)
@@ -52,10 +61,10 @@
 
 (define-test-case parsing-tests trivial-failure ()
   (test-eq 'LOSSAGE
-    (pl (parser:on-failure (parser:error "Failure!")
-          (lambda (pstate perror)
-            pstate perror               ;ignore
-            'LOSSAGE))
+    (pl (parser:on-failure (lambda (perror context stream)
+                             context stream ;ignore
+                             'LOSSAGE)
+          (parser:error "Failure!"))
         '())))
 
 (define-test-case parsing-tests monad-identity ()
@@ -155,7 +164,8 @@
   (test-equal '(LOSE 4 ("Unexpected token:" B))
     (pl test-parser:a^n-b^n-c^n
         '(a a b b b c c)
-        (lambda (perror stream)
+        (lambda (perror context stream)
+          context stream                ;ignore
           `(LOSE ,(parse-error/position perror)
                  ,@(parse-error/messages perror))))))
 
