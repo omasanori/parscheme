@@ -265,10 +265,8 @@
                  (make-parse-error:trailing-garbage
                   (parse-state/position pstate))))))
 
-(define (parser:complete parser)
-  (*parser ((value parser)
-            ((parser:end)))
-    (parser:return value)))
+(define (parser:return value)
+  (parser:epsilon (lambda () value)))
 
 (define (parser:delayed promise)
   (lambda (pstate win)
@@ -287,23 +285,26 @@
 ;;; variables or mutually recursive procedures, we delay the top-level
 ;;; of *PARSER forms.  Consider, for example,
 ;;;
-;;;   (define mumble-parser:foo
-;;;     (*parser ((frob mumble-parser:frob)
-;;;               (mumble-parser:zarquon))
+;;;   (define-parser mumble-parser:foo
+;;;     (*parser
+;;;         (frob mumble-parser:frob)
+;;;         (mumble-parser:zarquon)
 ;;;       (parser:return frob)))
 ;;;
-;;;   (define mumble-parser:frob ...),
+;;;   (define-parser mumble-parser:frob ...),
 ;;;
 ;;; which would otherwise have a forward reference at the top level and
 ;;; cause an error; or
 ;;;
-;;;   (define (mumble-parser:foo bar)
-;;;     (*parser ((frob (mumble-parser:frob bar))
-;;;               ((mumble-parser:zarquon)))
+;;;   (define-parser (mumble-parser:foo bar)
+;;;     (*parser
+;;;         (frob (mumble-parser:frob bar))
+;;;         ((mumble-parser:zarquon))
 ;;;       (parser:return frob)))
 ;;;
-;;;   (define (mumble-parser:frob bar)
-;;;     (parser:choice (mumble-parser:foo bar)
+;;;   (define-parser (mumble-parser:frob bar)
+;;;     (parser:choice (parser:sequence mumble-parser:fnord
+;;;                                     (mumble-parser:foo bar))
 ;;;                    ...)),
 ;;;
 ;;; which would (and did, for me!) lead to a very confusing infinite
@@ -319,38 +320,31 @@
 
 (define-syntax *parser
   (syntax-rules ()
-    ((*PARSER clauses tail-parser loser)
-     (PARSER:ON-FAILURE loser (*PARSER clauses tail-parser)))
-
-    ((*PARSER clauses tail-parser)
-     (PARSER:DELAYED (DELAY (**PARSER clauses tail-parser))))))
-
-(define-syntax **parser
-  (syntax-rules ()
-    ((**PARSER () tail-parser)
+    ((*PARSER tail-parser)
      tail-parser)
 
-    ((**PARSER ((parser) more ...) tail-parser)
-     (**PARSER ((IGNORE parser) more ...) tail-parser))
+    ((*PARSER (variable parser) more ...)
+     (PARSER:EXTEND parser (LAMBDA (variable) (*PARSER more ...))))
 
-    ((**PARSER ((variable parser) more ...) tail-parser)
-     (PARSER:EXTEND parser (LAMBDA (variable)
-                             (**PARSER (more ...) tail-parser))))))
+    ((*PARSER (parser) more ...)
+     (*PARSER (IGNORED parser) more ...))))
 
 (define-syntax define-parser
-  (syntax-rules (*PARSER)
+  (syntax-rules ()
     ((DEFINE-PARSER (name . bvl) parser)
      (DEFINE (name . bvl)
-       (PARSER:LABEL 'name parser)))
+       (PARSER:LABEL 'name (PARSER:DELAYED (DELAY parser)))))
 
     ((DEFINE-PARSER name parser)
      (DEFINE name
-       (PARSER:LABEL 'name parser)))))
+       (PARSER:LABEL 'name (PARSER:DELAYED (DELAY parser)))))))
 
 ;;;; Higher-Level Utilities
 
-(define (parser:return value)
-  (parser:epsilon (lambda () value)))
+(define (parser:complete parser)
+  (*parser (value parser)
+           ((parser:end))
+    (parser:return value)))
 
 (define (parser:token . mapper-option)
   (parser:token* (if (pair? mapper-option)
@@ -378,22 +372,20 @@
   (parser:token-if (lambda (token*) (eqv? token* token))))
 
 (define (parser:binary-sequence first-parser second-parser)
-  (*parser ((ignored first-parser))
-    second-parser))
+  (*parser (first-parser) second-parser))
 
 (define (parser:sequence sequent . sequents)
-  (reduce-right parser:binary-sequence
-                #f                      ; dummy, will be ignored
-                (cons sequent sequents)))
+  (reduce-right parser:binary-sequence #f (cons sequent sequents)))
 
-(define (parser:choice . alternatives)
-  (reduce-right parser:binary-choice (parser:error) alternatives))
+(define (parser:choice alternative . alternatives)
+  (reduce-right parser:binary-choice #f (cons alternative alternatives)))
 
-(define (parser:deep-choice . alternatives)
-  (reduce-map-right parser:binary-choice
-                    parser:backtrackable
-                    (parser:error)
-                    alternatives))
+(define (parser:deep-choice alternative . alternatives)
+  (let recur ((alternative alternative) (alternatives alternatives))
+    (if (pair? alternatives)
+        (parser:binary-choice (parser:backtrackable alternative)
+                              (recur (car alternatives) (cdr alternatives)))
+        alternative)))                  ;** Last one is not backtrackable.
 
 (define (parser:map parser mapper)
   (parser:extend parser
@@ -409,72 +401,132 @@
                  (parser:return #f)))
 
 (define (parser:refuse parser error)
-  (parser:choice (*parser ((datum parser))
-                   (error datum))
+  (parser:choice (parser:extend parser error)
                  (parser:return '())))
 
 ;;;;; Repetition
 
-(define (parser:repeated parser)
-  (let loop ((items '()))
-    (parser:choice (*parser ((item parser))
-                     (loop (cons item items)))
-                   (parser:epsilon (lambda () (reverse items))))))
+;;; It would be nice to be able to generally instantiate these somehow.
+;;; Consider, e.g, (DEFINE-REPEATING-PARSERS CONS '() REVERSE (REPEATED
+;;; PARSER:LIST:REPEATED) (AT-LEAST PARSER:LIST:AT-LEAST) ...).
 
-(define (parser:repeated-until terminal-parser repeated-parser)
-  (let loop ((items '()))
-    (parser:choice (*parser ((terminal-parser))
-                     (parser:return (reverse items)))
-                   (*parser ((item repeated-parser))
-                     (loop (cons item items))))))
+(define (parser:repeated combiner seed parser)
+  (let loop ((result seed))
+    (parser:choice (*parser (item parser)
+                     (loop (combiner item result)))
+                   (parser:return result))))
 
-(define (parser:at-most n parser)
-  (let loop ((n n) (items '()))
-    (let ((final (parser:epsilon (lambda () (reverse items)))))
+(define (parser:repeated-until terminal-parser combiner seed parser)
+  (let loop ((result seed))
+    (parser:choice (*parser (terminal-parser)
+                     (parser:return result))
+                   (*parser (item parser)
+                     (loop (combiner item result))))))
+
+(define (parser:at-most n combiner seed parser)
+  (let loop ((n n) (result seed))
+    (let ((final (parser:return result)))
       (if (zero? n)
           final
-          (parser:choice (*parser ((item parser))
-                           (loop (- n 1) (cons item items)))
+          (parser:choice (*parser (item parser)
+                           (loop (- n 1) (combiner item result)))
                          final)))))
 
-(define (parser:at-most-until n terminal-parser repeated-parser)
-  (let loop ((n n) (items '()))
-    (let* ((final (parser:epsilon (lambda () (reverse items))))
+(define (parser:at-most-until n terminal-parser combiner seed parser)
+  (let loop ((n n) (result seed))
+    (let* ((final (parser:return result))
            (terminal (parser:sequence terminal-parser final)))
       (if (zero? n)
           terminal
           (parser:choice terminal
-                         (*parser ((item repeated-parser))
-                           (loop (- n 1) (cons item items))))))))
+                         (*parser (item parser)
+                           (loop (- n 1) (combiner item result))))))))
 
-(define (parser:exactly n parser)
-  (let loop ((n n) (items '()))
+(define (parser:exactly n combiner seed parser)
+  (let loop ((n n) (result seed))
     (if (zero? n)
-        (parser:epsilon (lambda () (reverse items)))
-        (*parser ((item parser))
-          (loop (- n 1) (cons item items))))))
+        (parser:return result)
+        (*parser (item parser)
+          (loop (- n 1) (combiner item result))))))
 
-(define (parser:at-least n parser)
-  (*parser ((a (parser:exactly n parser))
-            (b (parser:repeated parser)))
-    (parser:return (append a b))))
+(define (parser:at-least n combiner seed parser)
+  (*parser (seed* (parser:exactly n combiner seed parser))
+    (parser:repeated combiner seed* parser)))
 
-(define (parser:at-least-until n terminal-parser repeated-parser)
-  (*parser ((a (parser:exactly n repeated-parser))
-            (b (parser:repeated-until terminal-parser repeated-parser)))
-    (parser:return (append a b))))
+(define (parser:at-least-until n terminal-parser combiner seed parser)
+  (*parser (seed* (parser:exactly n combiner seed parser))
+    (parser:repeated-until terminal-parser combiner seed* parser)))
 
-(define (parser:between n m parser)
-  (*parser ((a (parser:exactly n parser))
-            (b (parser:at-most (- m n) parser)))
-    (parser:return (append a b))))
+(define (parser:between n m combiner seed parser)
+  (*parser (seed* (parser:exactly n combiner seed parser))
+    (parser:at-most (- m n) combiner seed* parser)))
 
-(define (parser:between-until n m terminal-parser repeated-parser)
-  (*parser ((a (parser:exactly n repeated-parser))
-            (b (parser:at-most-until (- m n)
-                                     terminal-parser
-                                     repeated-parser)))
-    (parser:return (append a b))))
+(define (parser:between-until n m terminal-parser combiner seed parser)
+  (*parser (seed* (parser:exactly n combiner seed parser))
+    (parser:at-most-until (- m n) terminal-parser combiner seed parser)))
+
+;;;;;; Specialized Repetitions: Noise and Lists
+
+(define (ignore-noise item result)
+  item                                  ;ignore
+  result)
+
+(define (parser:noise:repeated parser)
+  (parser:repeated ignore-noise '() parser))
+
+(define (parser:noise:repeated-until terminal-parser parser)
+  (parser:repeated-until terminal-parser ignore-noise '() parser))
+
+(define (parser:noise:at-most n parser)
+  (parser:at-most n ignore-noise '() parser))
+
+(define (parser:noise:at-most-until n terminal-parser parser)
+  (parser:at-most-until n terminal-parser ignore-noise '() parser))
+
+(define (parser:noise:exactly n parser)
+  (parser:exactly n ignore-noise '() parser))
+
+(define (parser:noise:at-least n parser)
+  (parser:at-least n ignore-noise '() parser))
+
+(define (parser:noise:at-least-until n terminal-parser parser)
+  (parser:at-least-until n terminal-parser ignore-noise '() parser))
+
+(define (parser:noise:between n m parser)
+  (parser:between n m ignore-noise '() parser))
+
+(define (parser:noise:between-until n m terminal-parser parser)
+  (parser:between-until n m terminal-parser ignore-noise '() parser))
+
+(define (parser:reverse parser)
+  (parser:map parser reverse))
+
+(define (parser:list:repeated parser)
+  (parser:reverse (parser:repeated cons '() parser)))
+
+(define (parser:list:repeated-until terminal-parser parser)
+  (parser:reverse (parser:repeated-until terminal-parser cons '() parser)))
+
+(define (parser:list:at-most n parser)
+  (parser:reverse (parser:at-most n cons '() parser)))
+
+(define (parser:list:at-most-until n terminal-parser parser)
+  (parser:reverse (parser:at-most-until n terminal-parser cons '() parser)))
+
+(define (parser:list:exactly n parser)
+  (parser:reverse (parser:exactly n cons '() parser)))
+
+(define (parser:list:at-least n parser)
+  (parser:reverse (parser:at-least n cons '() parser)))
+
+(define (parser:list:at-least-until n terminal-parser parser)
+  (parser:reverse (parser:at-least-until n terminal-parser cons '() parser)))
+
+(define (parser:list:between n m parser)
+  (parser:reverse (parser:between n m cons '() parser)))
+
+(define (parser:list:between-until n m terminal-parser parser)
+  (parser:reverse (parser:between-until n m terminal-parser cons '() parser)))
 
 ;;;;; Brackets
 
@@ -482,14 +534,22 @@
 ;;; bare.
 
 (define (parser:bracketed left-bracket right-bracket body-parser)
-  (*parser ((left-bracket)
-            (body body-parser)
-            (right-bracket))
+  (*parser
+      (left-bracket)
+      (body body-parser)
+      (right-bracket)
     (parser:return body)))
 
-(define (parser:bracketed* left-bracket right-bracket repeated-parser)
+(define (parser:bracketed* left-bracket right-bracket combiner seed parser)
   (parser:sequence left-bracket
-                   (parser:repeated-until right-bracket repeated-parser)))
+                   (parser:repeated-until right-bracket combiner seed parser)))
+
+(define (parser:bracketed-noise left-bracket right-bracket parser)
+  (parser:bracketed* left-bracket right-bracket ignore-noise '() parser))
+
+(define (parser:bracketed-list left-bracket right-bracket parser)
+  (parser:reverse
+   (parser:bracketed* left-bracket right-bracket cons '() parser)))
 
 ;;;; Matching Parsers
 
@@ -543,21 +603,3 @@
                         '()
                         (cons (stream-car stream)
                               (recur (stream-cdr stream))))))))
-
-;;;; Random Utilities
-
-(define (reduce-right combiner right-identity list)
-  (reduce-map-right combiner
-                    (lambda (element) element)
-                    right-identity
-                    list))
-
-(define (reduce-map-right combiner mapper right-identity list)
-  (if (pair? list)
-      (let recur ((list list))
-        (let ((item (mapper (car list)))
-              (tail (cdr list)))
-          (if (pair? tail)
-              (combiner item (recur tail))
-              item)))
-      right-identity))

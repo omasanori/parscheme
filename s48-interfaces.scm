@@ -20,6 +20,8 @@
     parser:between-until
     parser:bracketed
     parser:bracketed*
+    parser:bracketed-noise
+    parser:bracketed-list
     parser:choice
     parser:complete
     parser:deep-choice
@@ -31,10 +33,28 @@
     parser:exactly
     parser:extend
     parser:label
+    parser:list:at-least
+    parser:list:at-least-until
+    parser:list:at-most
+    parser:list:at-most-until
+    parser:list:between
+    parser:list:between-until
+    parser:list:exactly
+    parser:list:repeated
+    parser:list:repeated-until
     parser:map
     parser:match
     parser:match->list
     parser:match->ignore
+    parser:noise:at-least
+    parser:noise:at-least-until
+    parser:noise:at-most
+    parser:noise:at-most-until
+    parser:noise:between
+    parser:noise:between-until
+    parser:noise:exactly
+    parser:noise:repeated
+    parser:noise:repeated-until
     parser:on-failure
     parser:optional
     parser:optional-noise
