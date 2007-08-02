@@ -77,7 +77,7 @@
   (let recur ((index 0))
     (if (= index (string-length string))
         (parser:return string)
-        (*parser (((parser:char-compare (string-ref string index))))
+        (*parser ((parser:char-compare (string-ref string index)))
           (recur (+ index 1))))))
 
 (define (parser:string= string)
@@ -85,3 +85,56 @@
 
 (define (parser:string-ci= string)
   (parser:string-compare parser:char-ci= string))
+
+;;;; Specialized Reptitions for Strings
+
+;;; For convenience, these just use DISPLAY to generate the output.
+;;; Whether this is the right thing, I don't know.
+
+(define (parser:get-output-string parser)
+  (parser:map parser get-output-string))
+
+(define (parser:string:repeated parser)
+  (parser:get-output-string
+   (parser:repeated display (open-output-string) parser)))
+
+(define (parser:string:repeated-until terminal-parser parser)
+  (parser:get-output-string
+   (parser:repeated-until terminal-parser display (open-output-string)
+     parser)))
+
+(define (parser:string:at-most n parser)
+  (parser:get-output-string
+   (parser:at-most n display (open-output-string) parser)))
+
+(define (parser:string:at-most-until n terminal-parser parser)
+  (parser:get-output-string
+   (parser:at-most-until n terminal-parser display (open-output-string)
+     parser)))
+
+(define (parser:string:exactly n parser)
+  (parser:get-output-string
+   (parser:exactly n display (open-output-string) parser)))
+
+(define (parser:string:at-least n parser)
+  (parser:get-output-string
+   (parser:at-least n display (open-output-string) parser)))
+
+(define (parser:string:at-least-until n terminal-parser parser)
+  (parser:get-output-string
+   (parser:at-least-until n terminal-parser display (open-output-string)
+     parser)))
+
+(define (parser:string:between n m parser)
+  (parser:get-output-string
+   (parser:between n m display (open-output-string) parser)))
+
+(define (parser:string:between-until n m terminal-parser parser)
+  (parser:get-output-string
+   (parser:between-until n m terminal-parser display (open-output-string)
+     parser)))
+
+(define (parser:bracketed-string left-bracket right-bracket parser)
+  (parser:get-output-string
+   (parser:bracketed* left-bracket right-bracket display (open-output-string)
+     parser)))

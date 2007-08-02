@@ -111,6 +111,7 @@
   (export
     parse-file
     parse-string
+    parser:bracketed-string
     parser:char
     parser:char=
     parser:char/=
@@ -123,6 +124,15 @@
     parser:reverse-list->string
     parser:string=
     parser:string-ci=
+    parser:string:at-least
+    parser:string:at-least-until
+    parser:string:at-most
+    parser:string:at-most-until
+    parser:string:between
+    parser:string:between-until
+    parser:string:exactly
+    parser:string:repeated
+    parser:string:repeated-until
     ))
 
 (define-interface text-matcher-combinators-interface
