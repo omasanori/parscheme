@@ -6,7 +6,7 @@
 ;;; This code is written by Taylor R. Campbell and placed in the Public
 ;;; Domain.  All warranties are disclaimed.
 
-(define (parse-file parser pathname lose)
+(define (parse-file parser pathname context win lose)
   (call-with-input-file pathname
     (lambda (input-port)
       (parse-stream parser
@@ -22,19 +22,17 @@
                         (if (char=? char #\newline)
                             (cons (+ line 1) 1)
                             (cons line (+ column 1)))))
-                    (lambda (value stream)
-                      stream            ;ignore
-                      value)
+                    context
+                    win
                     lose))))
 
-(define (parse-string parser string lose)
+(define (parse-string parser string context win lose)
   (parse-stream parser
                 (string->stream string)
                 0
                 (lambda (position token) token (+ position 1))
-                (lambda (value stream)
-                  stream                ;ignore
-                  value)
+                context
+                win
                 lose))
 
 (define (parser:char)
