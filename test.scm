@@ -174,7 +174,7 @@
       (n (parser:repeated (lambda (token count)
                             token       ;ignore
                             (+ count 1))
-                          0
+                          (parser:return 0)
                           (parser:eqv-token 'A)))
       ((parser:noise:exactly n (parser:eqv-token 'B)))
       ((parser:noise:exactly n (parser:eqv-token 'C)))
