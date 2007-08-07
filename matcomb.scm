@@ -111,13 +111,11 @@
       (cond ((run 'MATCHER:REPEATED matcher stream) => loop)
             (else stream)))))
 
-(define (matcher:repeated-until repeated-matcher terminal-matcher)
+(define (matcher:repeated-until terminal-matcher matcher)
   (lambda (stream)
     (let loop ((stream stream))
       (or (run '(MATCHER:REPEATED-UNTIL TERMINAL) terminal-matcher stream)
-          (cond ((run '(MATCHER:REPEATED-UNTIL REPEATED)
-                      repeated-matcher
-                      stream)
+          (cond ((run '(MATCHER:REPEATED-UNTIL REPEATED) matcher stream)
                  => loop)
                 (else #f))))))
 
@@ -126,48 +124,49 @@
     (let loop ((stream stream) (i 0))
       (and (<= i n)
            (cond ((run 'MATCHER:AT-MOST matcher stream)
-                  => (lambda (stream)
-                       (loop stream (+ i 1))))
+                  => (lambda (stream) (loop stream (+ i 1))))
                  (else stream))))))
 
-(define (matcher:at-most-until n repeated-matcher terminal-matcher)
+(define (matcher:at-most-until n terminal-matcher matcher)
   (define (match-terminal stream)
     (run '(MATCHER:AT-MOST-UNTIL TERMINAL) terminal-matcher stream))
   (lambda (stream)
     (let loop ((stream stream) (i 0))
       (cond ((= i n) (match-terminal stream))
-            ((run '(MATCHER:AT-MOST-UNTIL REPEATED) repeated-matcher stream)
-             => (lambda (stream*)
-                  (loop stream* (+ i 1))))
+            ((run '(MATCHER:AT-MOST-UNTIL REPEATED) matcher stream)
+             => (lambda (stream*) (loop stream* (+ i 1))))
             (else (match-terminal stream))))))
 
 (define (matcher:exactly n matcher)
   (lambda (stream)
     (let loop ((stream stream) (i 0))
-      (if (= i n)
-          stream
-          (cond ((run 'MATCHER:EXACTLY matcher stream)
-                 => (lambda (stream)
-                      (loop stream (+ i 1))))
-                (else #f))))))
+      (cond ((= i n) stream)
+            ((run 'MATCHER:EXACTLY matcher stream)
+             => (lambda (stream) (loop stream (+ i 1))))
+            (else #f)))))
 
 (define (matcher:at-least n matcher)
   (matcher:sequence (matcher:exactly n matcher)
                     (matcher:repeated matcher)))
 
-(define (matcher:at-least-until n repeated-matcher terminal-matcher)
-  (matcher:sequence
-   (matcher:exactly n repeated-matcher)
-   (matcher:repeated-until repeated-matcher terminal-matcher)))
+(define (matcher:at-least-until n terminal-matcher matcher)
+  (matcher:sequence (matcher:exactly n matcher)
+                    (matcher:repeated-until terminal-matcher matcher)))
 
 (define (matcher:between n m matcher)
   (matcher:sequence (matcher:at-least n matcher)
                     (matcher:at-most (- m n) matcher)))
 
-(define (matcher:between-until n m repeated-matcher terminal-matcher)
-  (matcher:sequence
-   (matcher:exactly n repeated-matcher)
-   (matcher:at-most-until (- m n) repeated-matcher terminal-matcher)))
+(define (matcher:between-until n m terminal-matcher matcher)
+  (matcher:sequence (matcher:exactly n matcher)
+                    (matcher:at-most-until (- m n) terminal-matcher matcher)))
+
+(define (matcher:bracketed left-bracket right-bracket body-matcher)
+  (matcher:sequence left-bracket right-bracket body-matcher))
+
+(define (matcher:bracketed* left-bracket right-bracket matcher)
+  (matcher:sequence left-bracket
+                    (matcher:repeated-until right-bracket matcher)))
 
 ;;;; Token Matchers
 
