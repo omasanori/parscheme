@@ -92,51 +92,53 @@
 (define (parser:get-output-string parser)
   (parser:map parser get-output-string))
 
+(define output-string-parser (parser:epsilon open-output-string))
+
 (define (display* object output-port)
   (display object output-port)
   output-port)
 
 (define (parser:string:repeated parser)
   (parser:get-output-string
-   (parser:repeated display* (open-output-string) parser)))
+   (parser:repeated display* output-string-parser parser)))
 
 (define (parser:string:repeated-until terminal-parser parser)
   (parser:get-output-string
-   (parser:repeated-until terminal-parser display* (open-output-string)
+   (parser:repeated-until terminal-parser display* output-string-parser
      parser)))
 
 (define (parser:string:at-most n parser)
   (parser:get-output-string
-   (parser:at-most n display* (open-output-string) parser)))
+   (parser:at-most n display* output-string-parser parser)))
 
 (define (parser:string:at-most-until n terminal-parser parser)
   (parser:get-output-string
-   (parser:at-most-until n terminal-parser display* (open-output-string)
+   (parser:at-most-until n terminal-parser display* output-string-parser
      parser)))
 
 (define (parser:string:exactly n parser)
   (parser:get-output-string
-   (parser:exactly n display* (open-output-string) parser)))
+   (parser:exactly n display* output-string-parser parser)))
 
 (define (parser:string:at-least n parser)
   (parser:get-output-string
-   (parser:at-least n display* (open-output-string) parser)))
+   (parser:at-least n display* output-string-parser parser)))
 
 (define (parser:string:at-least-until n terminal-parser parser)
   (parser:get-output-string
-   (parser:at-least-until n terminal-parser display* (open-output-string)
+   (parser:at-least-until n terminal-parser display* output-string-parser
      parser)))
 
 (define (parser:string:between n m parser)
   (parser:get-output-string
-   (parser:between n m display* (open-output-string) parser)))
+   (parser:between n m display* output-string-parser parser)))
 
 (define (parser:string:between-until n m terminal-parser parser)
   (parser:get-output-string
-   (parser:between-until n m terminal-parser display* (open-output-string)
+   (parser:between-until n m terminal-parser display* output-string-parser
      parser)))
 
 (define (parser:bracketed-string left-bracket right-bracket parser)
   (parser:get-output-string
-   (parser:bracketed* left-bracket right-bracket display* (open-output-string)
+   (parser:bracketed* left-bracket right-bracket display* output-string-parser
      parser)))
