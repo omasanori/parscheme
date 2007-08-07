@@ -463,59 +463,62 @@
 ;;; PARSER:LIST:REPEATED) (AT-LEAST PARSER:LIST:AT-LEAST) ...).
 
 (define (parser:repeated combiner seed parser)
-  (let loop ((result seed))
-    (parser:choice (*parser (item parser)
-                     (loop (combiner item result)))
-                   (parser:return result))))
+  (*parser (result seed)
+    (let loop ((result result))
+      (parser:choice (*parser (item parser) (loop (combiner item result)))
+                     (parser:return result)))))
 
 (define (parser:repeated-until terminal-parser combiner seed parser)
-  (let loop ((result seed))
-    (parser:choice (*parser (terminal-parser)
-                     (parser:return result))
-                   (*parser (item parser)
-                     (loop (combiner item result))))))
+  (*parser (result seed)
+    (let loop ((result result))
+      (parser:choice (*parser (terminal-parser) (parser:return result))
+                     (*parser (item parser) (loop (combiner item result)))))))
 
 (define (parser:at-most n combiner seed parser)
-  (let loop ((n n) (result seed))
-    (let ((final (parser:return result)))
-      (if (zero? n)
-          final
-          (parser:choice (*parser (item parser)
-                           (loop (- n 1) (combiner item result)))
-                         final)))))
+  (*parser (result seed)
+    (let loop ((n n) (result result))
+      (let ((final (parser:return result)))
+        (if (zero? n)
+            final
+            (parser:choice (*parser (item parser)
+                             (loop (- n 1) (combiner item result)))
+                           final))))))
 
 (define (parser:at-most-until n terminal-parser combiner seed parser)
-  (let loop ((n n) (result seed))
-    (let* ((final (parser:return result))
-           (terminal (parser:sequence terminal-parser final)))
-      (if (zero? n)
-          terminal
-          (parser:choice terminal
-                         (*parser (item parser)
-                           (loop (- n 1) (combiner item result))))))))
+  (*parser (result seed)
+    (let loop ((n n) (result result))
+      (let* ((final (parser:return result))
+             (terminal (parser:sequence terminal-parser final)))
+        (if (zero? n)
+            terminal
+            (parser:choice terminal
+                           (*parser (item parser)
+                             (loop (- n 1) (combiner item result)))))))))
 
 (define (parser:exactly n combiner seed parser)
-  (let loop ((n n) (result seed))
-    (if (zero? n)
-        (parser:return result)
-        (*parser (item parser)
-          (loop (- n 1) (combiner item result))))))
+  (*parser (result seed)
+    (let loop ((n n) (result result))
+      (if (zero? n)
+          (parser:return result)
+          (*parser (item parser)
+            (loop (- n 1) (combiner item result)))))))
 
 (define (parser:at-least n combiner seed parser)
-  (*parser (seed* (parser:exactly n combiner seed parser))
-    (parser:repeated combiner seed* parser)))
+  (parser:repeated combiner (parser:exactly n combiner seed parser) parser))
 
 (define (parser:at-least-until n terminal-parser combiner seed parser)
-  (*parser (seed* (parser:exactly n combiner seed parser))
-    (parser:repeated-until terminal-parser combiner seed* parser)))
+  (parser:repeated-until terminal-parser combiner
+      (parser:exactly n combiner seed parser)
+    parser))
 
 (define (parser:between n m combiner seed parser)
-  (*parser (seed* (parser:exactly n combiner seed parser))
-    (parser:at-most (- m n) combiner seed* parser)))
+  (parser:at-most (- m n) combiner (parser:exactly n combiner seed parser)
+    parser))
 
 (define (parser:between-until n m terminal-parser combiner seed parser)
-  (*parser (seed* (parser:exactly n combiner seed parser))
-    (parser:at-most-until (- m n) terminal-parser combiner seed parser)))
+  (parser:at-most-until (- m n) terminal-parser combiner
+      (parser:exactly n combiner seed parser)
+    parser))
 
 ;;;;;; Specialized Repetitions: Noise and Lists
 
@@ -523,62 +526,69 @@
   item                                  ;ignore
   result)
 
+(define null-parser (parser:return '()))
+
 (define (parser:noise:repeated parser)
-  (parser:repeated ignore-noise '() parser))
+  (parser:repeated ignore-noise null-parser parser))
 
 (define (parser:noise:repeated-until terminal-parser parser)
-  (parser:repeated-until terminal-parser ignore-noise '() parser))
+  (parser:repeated-until terminal-parser ignore-noise null-parser parser))
 
 (define (parser:noise:at-most n parser)
-  (parser:at-most n ignore-noise '() parser))
+  (parser:at-most n ignore-noise null-parser parser))
 
 (define (parser:noise:at-most-until n terminal-parser parser)
-  (parser:at-most-until n terminal-parser ignore-noise '() parser))
+  (parser:at-most-until n terminal-parser ignore-noise null-parser parser))
 
 (define (parser:noise:exactly n parser)
-  (parser:exactly n ignore-noise '() parser))
+  (parser:exactly n ignore-noise null-parser parser))
 
 (define (parser:noise:at-least n parser)
-  (parser:at-least n ignore-noise '() parser))
+  (parser:at-least n ignore-noise null-parser parser))
 
 (define (parser:noise:at-least-until n terminal-parser parser)
-  (parser:at-least-until n terminal-parser ignore-noise '() parser))
+  (parser:at-least-until n terminal-parser ignore-noise null-parser parser))
 
 (define (parser:noise:between n m parser)
-  (parser:between n m ignore-noise '() parser))
+  (parser:between n m ignore-noise null-parser parser))
 
 (define (parser:noise:between-until n m terminal-parser parser)
-  (parser:between-until n m terminal-parser ignore-noise '() parser))
-
+  (parser:between-until n m terminal-parser ignore-noise null-parser parser))
+
 (define (parser:reverse parser)
   (parser:map parser reverse))
 
 (define (parser:list:repeated parser)
-  (parser:reverse (parser:repeated cons '() parser)))
+  (parser:reverse (parser:repeated cons null-parser parser)))
 
 (define (parser:list:repeated-until terminal-parser parser)
-  (parser:reverse (parser:repeated-until terminal-parser cons '() parser)))
+  (parser:reverse
+   (parser:repeated-until terminal-parser cons null-parser parser)))
 
 (define (parser:list:at-most n parser)
-  (parser:reverse (parser:at-most n cons '() parser)))
+  (parser:reverse (parser:at-most n cons null-parser parser)))
 
 (define (parser:list:at-most-until n terminal-parser parser)
-  (parser:reverse (parser:at-most-until n terminal-parser cons '() parser)))
+  (parser:reverse
+   (parser:at-most-until n terminal-parser cons null-parser parser)))
 
 (define (parser:list:exactly n parser)
-  (parser:reverse (parser:exactly n cons '() parser)))
+  (parser:reverse (parser:exactly n cons null-parser parser)))
 
 (define (parser:list:at-least n parser)
-  (parser:reverse (parser:at-least n cons '() parser)))
+  (parser:reverse (parser:at-least n cons null-parser parser)))
 
 (define (parser:list:at-least-until n terminal-parser parser)
-  (parser:reverse (parser:at-least-until n terminal-parser cons '() parser)))
+  (parser:reverse
+   (parser:at-least-until n terminal-parser cons null-parser parser)))
 
 (define (parser:list:between n m parser)
-  (parser:reverse (parser:between n m cons '() parser)))
+  (parser:reverse
+   (parser:between n m cons null-parser parser)))
 
 (define (parser:list:between-until n m terminal-parser parser)
-  (parser:reverse (parser:between-until n m terminal-parser cons '() parser)))
+  (parser:reverse
+   (parser:between-until n m terminal-parser cons null-parser parser)))
 
 ;;;;; Brackets
 
