@@ -109,8 +109,8 @@
         '(-4))))
 
 (define-parser test-parser:contrived-choice
-  (parser:choice (parser:map (parser:token-if negative?) square)
-                 (parser:map (parser:token-if integer?) -)))
+  (parser:choice (parser:map square (parser:token-if negative?))
+                 (parser:map - (parser:token-if integer?))))
 
 (define (square x) (* x x))
 
