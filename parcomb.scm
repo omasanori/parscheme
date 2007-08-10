@@ -252,9 +252,9 @@
               (parse-state-with-context pstate context)
               context)))
 
-(define (parser:with-context receiver)
+(define (parser:call-with-context receiver)
   (lambda (pstate win)
-    (success* 'PARSER:WITH-CONTEXT
+    (success* 'PARSER:CALL-WITH-CONTEXT
               win
               pstate
               (receiver (parse-state/context pstate)))))

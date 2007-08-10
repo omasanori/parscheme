@@ -22,6 +22,7 @@
     parser:bracketed*
     parser:bracketed-noise
     parser:bracketed-list
+    parser:call-with-context
     parser:choice
     parser:complete
     parser:context
@@ -70,7 +71,6 @@
     parser:token
     parser:token*
     parser:token-if
-    parser:with-context
     ))
 
 (define-interface matcher-combinators-interface
