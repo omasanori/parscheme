@@ -63,9 +63,10 @@
   (parser:map list->string parser))
 
 (define (parser:reverse-list->string parser)
-  (parser:map parser
-              (lambda (list)
-                (list->string (reverse list)))))
+  (parser:map reverse-list->string parser))
+
+(define (reverse-list->string list)     ;++ fix
+  (list->string (reverse list)))
 
 (define (parser:match->string matcher)
   ;++ This could be improved dramatically if we improved matchers.
@@ -90,7 +91,7 @@
 ;;; Whether this is the right thing, I don't know.
 
 (define (parser:get-output-string parser)
-  (parser:map parser get-output-string))
+  (parser:map get-output-string parser))
 
 (define output-string-parser (parser:epsilon open-output-string))
 
