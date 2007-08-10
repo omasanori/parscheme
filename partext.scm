@@ -60,7 +60,7 @@
                     char-set))
 
 (define (parser:list->string parser)
-  (parser:map parser list->string))
+  (parser:map list->string parser))
 
 (define (parser:reverse-list->string parser)
   (parser:map parser

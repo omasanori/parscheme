@@ -439,7 +439,7 @@
                               (recur (car alternatives) (cdr alternatives)))
         alternative)))                  ;** Last one is not backtrackable.
 
-(define (parser:map parser mapper)
+(define (parser:map mapper parser)
   (parser:extend parser
                  (lambda (value)
                    (parser:epsilon (lambda ()
@@ -556,7 +556,7 @@
   (parser:between-until n m terminal-parser ignore-noise null-parser parser))
 
 (define (parser:reverse parser)
-  (parser:map parser reverse))
+  (parser:map reverse parser))
 
 (define (parser:list:repeated parser)
   (parser:reverse (parser:repeated cons null-parser parser)))
