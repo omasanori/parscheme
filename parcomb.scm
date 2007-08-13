@@ -607,11 +607,12 @@
                    (parser:repeated-until right-bracket combiner seed parser)))
 
 (define (parser:bracketed-noise left-bracket right-bracket parser)
-  (parser:bracketed* left-bracket right-bracket ignore-noise '() parser))
+  (parser:bracketed* left-bracket right-bracket ignore-noise null-parser
+    parser))
 
 (define (parser:bracketed-list left-bracket right-bracket parser)
   (parser:reverse
-   (parser:bracketed* left-bracket right-bracket cons '() parser)))
+   (parser:bracketed* left-bracket right-bracket cons null-parser parser)))
 
 ;;;; Matching Parsers
 
