@@ -115,6 +115,7 @@
 (define-interface text-parser-combinators-interface
   (export
     parse-file
+    parse-input-chars
     parse-string
     parser:bracketed-string
     parser:char

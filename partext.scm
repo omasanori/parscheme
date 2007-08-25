@@ -9,22 +9,25 @@
 (define (parse-file parser pathname context win lose)
   (call-with-input-file pathname
     (lambda (input-port)
-      (parse-stream parser
-                    (let recur ()
-                      (lazy (let ((char (read-char input-port)))
-                              (if (eof-object? char)
-                                  stream-nil
-                                  (stream-cons char (recur))))))
-                    (cons 1 1)
-                    (lambda (position char)
-                      (let ((line (car position))
-                            (column (cdr position)))
-                        (if (char=? char #\newline)
-                            (cons (+ line 1) 1)
-                            (cons line (+ column 1)))))
-                    context
-                    win
-                    lose))))
+      (parse-input-chars parser input-port context win lose))))
+
+(define (parse-input-chars parser input-port context win lose)
+  (parse-stream parser
+                (let recur ()
+                  (lazy (let ((char (read-char input-port)))
+                          (if (eof-object? char)
+                              stream-nil
+                              (stream-cons char (recur))))))
+                (cons 1 1)
+                (lambda (position char)
+                  (let ((line (car position))
+                        (column (cdr position)))
+                    (if (char=? char #\newline)
+                        (cons (+ line 1) 1)
+                        (cons line (+ column 1)))))
+                context
+                win
+                lose))
 
 (define (parse-string parser string context win lose)
   (parse-stream parser
