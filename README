@@ -40,11 +40,6 @@ if space safety is not a concern.  If space safety is a concern, then
 there is an implementation from lazy.scm, and there is also the
 reference implementation available on the web.
 
-The only other non-standard extensions are
-
-- a procedure for writing an object to a string, limited to a small
-  depth in order to avoid cluttered output (LIMITED-WRITE-TO-STRING).
-
 ** Documentation
 
 To be written.
